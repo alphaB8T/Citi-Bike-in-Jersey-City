@@ -1,0 +1,426 @@
+---
+title: "Citi Bike in Jersey City"
+output: flexdashboard::flex_dashboard
+runtime: shiny
+---
+```{css}
+.datatables.html-widget.html-widget-static-bound{
+  height: auto !important;
+  width: 90vw !important;
+}
+.dataTables_scrollBody{
+  height: unset !important;
+}
+```
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(shiny)
+library(rmarkdown)
+library(knitr)
+library(Hmisc)
+library(data.table)
+library(DT)
+library(tidyr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(ggcorrplot)
+library(geosphere)
+library(skimr)
+library(leaflet)
+
+library(data.table)
+assignInNamespace("cedta.override", c(data.table:::cedta.override,"rmarkdown"), "data.table")
+
+opts_chunk$set(echo = FALSE, comment="", warning = FALSE, message = FALSE, tidy.opts=list(width.cutoff=55), tidy = TRUE)
+
+#opts_knit$set(root.dir = "C:/xyz/CU/5902 Capstone - Data Science Consulting/Final Project/Scripts")
+
+#("C:/xyz/CU/5902 Capstone - Data Science Consulting/Final Project/Scripts")
+
+Sys.setlocale("LC_TIME", "en_US.UTF-8")
+```
+
+```{r read_data}
+rides = readRDS("shiny_preprocessed_rides.rds")
+station_lat_lng = readRDS("station_lat_lng.rds")
+```
+
+
+```{r source_functions}
+#source("constants.R")
+#source("functions.R")
+```
+
+
+```{r constants}
+# Most constants have been placed in the file constants.R to unify the work across reporting and applications.
+
+# Additional constants that are unique to this reporting engine can be added here.
+
+
+
+ride.day = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+```
+
+```{r functions}
+station_hour_weekday <- function(bike_type = "Both", data) {
+  if (bike_type == "Both") {
+    # If not specified, use all data
+    dat <- data
+  } else {
+    # If specified, filter data by bike_type
+    dat <- data[data$rideable_type == bike_type, ]
+  }
+
+  #dat = data[rideable_type == bike_type,]
+  bikes_out = dat[, .(bikes_out = .N, 
+                      start_station_latitude = first(start_lat), 
+                      start_station_longitude = first(start_lng)), 
+                by = .(station_name = start_station_name, date = ride_date, week_day = ride_day, hour = hour(started_at))]
+  
+  bikes_in = dat[, .(bikes_in = .N, 
+                      end_station_latitude = first(end_lat), 
+                      end_station_longitude = first(end_lng)), 
+                by = .(station_name = end_station_name, date = ride_date, week_day = ride_day, hour = hour(started_at))]
+
+  bikes_change = merge(bikes_in, bikes_out, by = c("station_name", "date", "week_day", "hour"), all = TRUE)
+
+  bikes_change[is.na(bikes_change),] = 0
+  #bikes_change = bikes_change[, net_change := bikes_in - bikes_out,]
+  setorderv(bikes_change, cols = c("station_name", "date", "hour"))
+  #bikes_change = bikes_change[, cumulative := cumsum(net_change), by = station_name]
+  bikes_change = bikes_change[, .(station_name, date, week_day, hour, bikes_in, bikes_out,
+    latitude = coalesce(end_station_latitude, start_station_latitude), 
+    longitude = coalesce(end_station_longitude,start_station_longitude),
+    bike_type = bike_type
+    )]
+}
+
+```
+
+
+
+Introduction
+=====================================  
+This is the dynamic application for our Citi Bike in Jersey City project. There are 5 tabs in this app. Users can select top routes on different weekdays and see the routes and ride numbers. In the second tab, users can see station-level bike flows. The third tab is to compare the number of rides with electric bikes and classic bikes throughout a day at different stations on different weekdays. The fourth tab shows ride counts. The fifth tab shows distributions of riding duration, distance, and speed for the two types of bikes.
+
+
+Routes
+=====================================  
+
+Row {data-height=500}
+-------------------------------------
+
+```{r routes_input}
+inputPanel(
+  selectInput(inputId = "ride_day", label = "Select the Weekday:", choices = ride.day, selected = ride.day[1]),
+  #checkboxInput(inputId = "product_info_decreasing", label = "Sorted", value=TRUE),
+  sliderInput(inputId = "top_n", label = "Top N Routes", min = 1, max = 20, value = 5, step = 1)
+)
+```
+
+Row {data-height=500}
+-------------------------------------
+
+```{r routes_output}
+renderLeaflet({
+  rides_tab = rides[ride_day %in% input$ride_day,]
+  rides_tab = rides_tab[, .(count = .N,
+                            start_lat = first(start_lat), 
+                            start_lng = first(start_lng),
+                            end_lat = first(end_lat),
+                            end_lng = first(end_lng),
+                            start_station_name = first(start_station_name),
+                            end_station_name = first(end_station_name)), 
+                       by = c("station_path", "rideable_type")]
+  setorderv(x = rides_tab, cols = "count", order = -1)
+  rides_tab = rides_tab[1:input$top_n,]
+  
+  #setnames(rates, "get", input$respondent_variable)
+  
+  # Map
+  #leaflet(data = rides_tab) %>%
+  #addTiles() %>%
+  #addPolylines(lng = ~c(start_lng, end_lng), 
+  #             lat = ~c(start_lat, end_lat), 
+  #             weight = ~count,
+  #             color = "blue", opacity = 1)
+  
+  
+  library(RColorBrewer)
+
+# Define the number of levels in your data (e.g., the maximum count of rides)
+num_levels <- max(rides_tab$count)
+
+# Create a color ramp function interpolating between the colors of the chosen palette
+color_ramp <- colorRampPalette(brewer.pal(9, "Blues"))(num_levels)
+#color_ramp <- colorRampPalette(c("lightblue", "#000033"))(num_levels)  
+
+# Create a function to map a count to a color
+get_color <- function(count, max_count) {
+  # Normalize count to the range of 1 to num_levels
+  normalized_count <- round((count / max_count) * num_levels)
+  # Use the normalized count to get the color
+  color_ramp[normalized_count]
+}
+  
+  m <- leaflet() %>% 
+  addTiles() %>%  # Add default OpenStreetMap map tiles
+  setView(lng = -74.067622, lat = 40.725340, zoom = 13)
+
+  for(i in 1:nrow(rides_tab)) {
+    label <- paste("Start:", rides_tab$start_station_name[i], 
+                 "<br>End:", rides_tab$end_station_name[i],
+                 "<br>Rides:", rides_tab$count[i])
+    
+    m <- m %>% addPolylines(
+      lng = c(rides_tab$start_lng[i], rides_tab$end_lng[i]),
+      lat = c(rides_tab$start_lat[i], rides_tab$end_lat[i]),
+      color = get_color(rides_tab$count[i], num_levels),
+      weight = 4,
+      opacity = 0.7,
+      popup = label)
+  }
+
+  m
+  
+})
+```
+
+
+Stations
+=====================================  
+
+Row {data-height=500}
+-------------------------------------
+
+```{r read_tab2_data}
+change = readRDS("stations_tab.rds")
+
+```
+
+
+```{r tab2_constants}
+dates = unique(change$date)
+bike_type = unique(change$bike_type)
+```
+
+
+```{r tab2_input}
+inputPanel(
+  checkboxGroupInput("metrics", "Select Metrics:",
+                     choices = list("Bikes In" = "bikes_in",
+                                    "Bikes Out" = "bikes_out",
+                                    "Net Change" = "net_change",
+                                    "Cumulative" = "cumulative")),
+  selectInput("bike_type", "Select Bike Type:",
+              choices = bike_type),
+  selectInput("date", "Select Date:", choices = dates)
+)
+```
+
+Row {data-height=500}
+-------------------------------------
+
+```{r tab2_output}
+renderLeaflet({
+  selected_date <- input$date
+  selected_metrics <- input$metrics
+  selected_bike_type <- input$bike_type
+  filtered_data <- change[date == selected_date & bike_type == selected_bike_type,]
+
+
+  # Create popups
+  popups <- sapply(1:nrow(filtered_data), function(i) {
+    row <- filtered_data[i]
+    info <- paste(sapply(selected_metrics, function(metric) {
+      paste0(metric, ": ", row[[metric]])
+    }), collapse = "<br/>")
+    paste0("<strong>Station: ", row$station_name, "</strong><br/>", info)
+  })
+
+  m <- leaflet(filtered_data) %>%
+    addTiles() %>%
+    setView(lng = -74.067622, lat = 40.725340, zoom = 13) %>%
+    
+    addMarkers(~longitude, ~latitude, popup = popups)
+  
+  m
+})
+```
+
+
+
+E-Bikes / Classic Bikes
+=====================================  
+
+Row {data-height=500}
+-------------------------------------
+
+```{r tab3_read_data}
+hw_avg = readRDS("electric_vs_classic.rds")
+
+```
+
+```{r tab3_constants}
+week_day = unique(hw_avg$week_day)
+bike_type_tab3 = c("Both","electric vs classic")
+```
+
+```{r tab3_input}
+fluidRow(
+column(width = 6,
+       inputPanel(
+  selectInput("bike_type_tab3", "Select Bike Type:",
+              choices = bike_type_tab3,
+              selected = bike_type_tab3[1]),
+  selectInput("week_day", "Select Date:", choices = week_day)
+       )),
+  
+  column(width = 12,
+         plotOutput("plot"))
+)
+```
+
+```{r tab3_map_input}
+fluidRow(
+  column(width = 12,
+         leafletOutput("map")
+  )
+)
+```
+
+
+
+Row {data-height=500}
+-------------------------------------
+
+```{r tab3_output}
+
+output$map <- renderLeaflet({
+  # Your Leaflet map initialization code should go here
+  # For example:
+  leaflet(station_lat_lng) %>%
+    addTiles() %>%
+    setView(lng = -74.067622, lat = 40.725340, zoom = 13) %>%
+    addMarkers(~longitude, ~latitude, layerId = ~station_name, popup = ~station_name)
+  })
+
+# Define a reactive expression that will update whenever the inputs change.
+filtered_data <- reactive({
+  req(input$map_marker_click)  # Require that a map marker has been clicked
+  clicked_id <- input$map_marker_click$id
+
+  week_day_val <- input$week_day
+  bike_type_val <- input$bike_type_tab3
+
+  # Print the input values and their types
+  print(paste("Clicked ID:", clicked_id))
+  print(paste("Week Day:", week_day_val))
+  print(paste("Bike Type:", bike_type_val))
+
+  # Check data types
+  print(typeof(hw_avg$station_name))
+  print(typeof(hw_avg$week_day))
+  print(typeof(hw_avg$bike_type_tab3))
+  
+  data = hw_avg[station_name == clicked_id & 
+                week_day == input$week_day & 
+                group == input$bike_type_tab3, ]
+})
+
+
+# Render the plot based on the filtered data.
+output$plot <- renderPlot({
+  req(filtered_data())  
+  ggplot(filtered_data(), aes(x = hour, y = avg_bikes_out, group = bike_type, color = bike_type)) +
+    geom_line() +
+    labs(title = paste("Data for Station", input$map_marker_click$id))
+})
+
+```
+
+
+Ride Counts
+=====================================  
+
+```{r tab4_constants}
+grouping.variable = c("ride_date", "ride_ym", "ride_DoW", "ride_ToD")
+```
+
+
+```{r tab4_input}
+inputPanel(
+  selectInput(inputId="grouping_variable", label = "Select Variable:", choices = grouping.variable, selected = grouping.variable[1])
+)
+```
+
+
+Row {data-height=500}
+-------------------------------------
+
+```{r tab4_output}
+renderPlot({
+  data = rides[, .(count = .N), by = .(rideable_type, get(input$grouping_variable))]
+  setnames(data, "get", input$grouping_variable)
+  
+  print(data)
+  
+  ggplot(data, aes(x = get(input$grouping_variable), y = count, group = rideable_type, color = rideable_type)) +
+  geom_line() +
+  theme_minimal() +
+  labs(x = input$grouping.variable, y = "Count", title = "Ride Counts by Rideable Type and ") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+})
+```
+
+
+
+Density Plots
+=====================================  
+
+```{r tab5_constants}
+dur.dist.speed = c("ride_dur_s", "ride_dist_m", "ride_speed_kmh")
+member.casual = c("both", "member", "casual")
+```
+
+
+```{r tab5_input}
+inputPanel(
+  selectInput(inputId="dur_dist_speed", label = "Select Variables:", choices = dur.dist.speed, selected = dur.dist.speed[1])
+)
+```
+
+
+Row {data-height=500}
+-------------------------------------
+
+```{r tab5_output}
+renderPlot({
+  data_tab5 = rides[is.na(get(input$dur_dist_speed)), input$dur_dist_speed := 0]
+  #setnames(data_tab5, "get", input$grouping_variable)
+  #print(data_tab5)
+  
+    x_limits <- switch(input$dur_dist_speed,
+    "ride_dur_s" = c(0, 2000),
+    "ride_dist_m" = c(0, 5000),
+    "ride_speed_kmh" = c(0, 30),
+    NULL  # Default case if none match
+  )
+    
+ p = ggplot(data_tab5, aes(x = get(input$dur_dist_speed), fill = rideable_type)) +
+  geom_density(alpha = 0.3)
+  #scale_x_continuous(limits = c(0, 2000)) +   # This is what I changed manually
+  # Add x-axis limits if they are defined
+  if (!is.null(x_limits)) {
+    p = p + scale_x_continuous(limits = x_limits)
+  }
+
+  p + labs(x = input$dur_dist_speed, y = 'density', fill = 'Ride Type') + 
+    theme_minimal()
+
+
+})
+```

@@ -1,0 +1,541 @@
+---
+title: "Written Report"
+author: "FP-3"
+date: "2023-12-07"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = TRUE)
+
+knitr::opts_chunk$set(echo = FALSE, comment="", warning = FALSE, message = FALSE, tidy.opts=list(width.cutoff=55), tidy = TRUE)
+
+```
+
+```{r}
+library(data.table)
+library(DT)
+library(tidyr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+
+
+rides = fread(input = '../Data/rides_processed.csv')
+
+rides$ride_ToD = factor(rides$ride_ToD, levels = c('Morning', 'Afternoon', 'Evening', 'Night'))
+rides$ride_day = factor(rides$ride_day, levels = c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'))
+
+```
+
+# Introduction {.tabset}
+
+The U.S. bike-sharing industry has experienced significant expansion,
+revolutionizing urban mobility while addressing traffic congestion and
+environmental sustainability. In major cities, accessible bike-sharing
+networks are available, offering a variety of bike types including
+traditional, electric, and smart bikes. Despite a few companies
+dominating the market, there is room for unique differentiation.
+
+A prominent example is Citi Bike NYC, operated by Lyft, which has
+established itself as a key player in providing convenient, eco-friendly
+transportation in New York since its inception in May 2013. Following
+its success, Citi Bike expanded into Jersey City and Hoboken in 2015.
+Our team is focused not only on increasing the overall usage of
+bike-sharing in Jersey City but also on specifically promoting the use
+of electric bikes. By emphasizing e-bikes, we aim to enhance the
+sustainability and reputation of Citi Bike NYC, furthering its growth
+and positive impact on urban transportation.
+
+## Research question and approach
+
+To enhance our understanding of the factors influencing the usage rate
+of Citi Bike, our initial step involved identifying the key elements
+contributing to the fluctuations in bike usage. A significant pivot in
+Citi Bike's business model was the introduction of electric bikes
+(E-bikes), which marked a notable change in the service's offerings.
+Recognizing the potential of E-bikes to attract new users and increase
+overall bike usage, we tailored our research questions to focus
+specifically on this aspect.
+
+Our primary research question is: **What is the optimal balance of
+electric bikes and traditional bikes at Citi Bike stations across
+various regions?** We structured our analytical framework to compare
+E-bikes with traditional bikes in multiple dimensions. This comparison
+aimed to shed light on user preferences, the impact of E-bikes on ride
+duration, their role in expanding the user base to different
+demographics, and the overall effect on the Citi Bike system's
+efficiency and appeal. By concentrating on these comparative analyses,
+we aimed to uncover insights that could guide strategies to boost Citi
+Bike's usage rate effectively.
+
+The first question we answered was: **what is the difference in top
+popular routes for electric bikes versus traditional ones?** We define a
+"route" as a distinct pair of start and end stations that define a
+single trip. This approach will allow us to discern whether there are
+particular patterns or preferences in the use of E-bikes versus
+traditional bikes based on the routes users choose, thereby informing us
+on how to optimally adjust the allocation of each bike type along the
+routes.
+
+To add depth to our analysis, we also plan to examine the distribution
+of these popular routes across different days of the week. This aspect
+of the research will provide insights into how the usage of E-bikes and
+traditional bikes varies depending on the day. For instance, are certain
+routes more popular with E-bike riders during weekdays as opposed to
+weekends? Does the type of bike chosen correlate with the purpose of the
+trip, such as commuting during weekdays or leisure activities during
+weekends?
+
+Our second research question delved into the **differences in the most
+popular stations for electric bikes (E-bikes) versus traditional ones**.
+Building on our analysis of popular routes, this inquiry extended to
+examining how specific stations are utilized differently by E-bike and
+traditional bike riders. In assessing the popularity of a station, we
+employed a multifaceted approach, considering several key metrics:
+
+1.  Total Inflow of Bikes: This metric involves counting the total
+    number of bikes, both E-bikes and traditional, arriving at a
+    station. This helps in understanding which stations serve as major
+    destinations.
+
+2.  Total Outflow of Bikes: Contrasting with inflow, this metric
+    measures the total number of bikes leaving a station, providing
+    insights into which stations are common starting points for trips.
+
+3.  Net Change of Bikes Coming Into and Out of a Station: By calculating
+    the difference between the inflow and outflow, we can identify
+    stations that are net 'givers' or 'receivers' of bikes. This helps
+    in understanding the dynamic balance of bike availability at each
+    station.
+
+4.  Cumulative Number of Bikes: This involves tracking the total number
+    of bikes (both types) passing through a station over a given period,
+    offering a broader view of station usage intensity.
+
+## Results: Analysis & Recommendations
+
+For this project we used trip data for the last 2 years, from October
+2021 to October 2023.
+
+```{r}
+
+rides %>% filter(rideable_type != 'docked_bike') %>%
+  mutate(ride_date = substr(as.character(ride_date), 1, 7)) %>%
+  count(ride_date, rideable_type)  %>%
+  ggplot(aes(x = ride_date, y = n, group = rideable_type, color = rideable_type)) +
+  geom_line() +
+  theme_minimal() +
+  labs(x = "Year-Month", y = "Frequency", title = "Ride Counts by Rideable Type and Date") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) # This will rotate the x-axis labels
+
+```
+
+From the end of 2021 to the end of 2022 electric bike usage followed a
+similar usage pattern as classic bikes in a lower magnitude. However,
+since April 2023 the use of e-bikes has decreased, following an opposite
+trend compared to the growth of classic bike usage.
+
+On average, this is the distribution of ride type:
+
+```{r}
+df = 
+rides %>%
+  filter(rideable_type != 'docked_bike') %>%
+  count(rideable_type) %>%
+  rename(`Number of Rides` = n) %>%
+  mutate(`Proportion of Rides` = round(100 * (`Number of Rides` / sum(`Number of Rides`)),1 ))
+
+DT::datatable(df, rownames = FALSE)
+```
+
+Riders can pay for a subscription for unlimited bike rides, or they can
+pay for individual rides.
+
+```{r}
+df =
+rides %>%
+  filter(rideable_type != 'docked_bike') %>%
+  count(member_casual) %>%
+  rename(`Number of Rides` = n) %>%
+  mutate(`Proportion of Rides` = round(100 * (`Number of Rides` / sum(`Number of Rides`)),1 ))
+DT::datatable(df, rownames = FALSE)
+```
+
+Members show a preference for classic bikes, with 70% of all classic
+bike usage attributed to them, while non-members are more inclined
+towards electric bikes, with members accounting for approximately 60% of
+all e-bike usage.
+
+```{r}
+
+grouping_var = 'member_casual'  
+
+rides %>% filter(rideable_type != 'docked_bike') %>%
+  count(rideable_type, get(grouping_var)) %>%
+  group_by(rideable_type) %>%
+  mutate(total_count = sum(n)) %>%
+  ungroup() %>%
+  mutate(pct_type = 100 * n / total_count) %>%
+  ggplot(aes(x = `get(grouping_var)`, y = pct_type, fill = rideable_type)) +
+  #ggplot(aes(x = rideable_type, y = pct_type, fill = `get(grouping_var)`)) +
+  geom_bar(stat = 'identity', position = position_dodge()) +
+  labs(title = 'Proportion of rides by User', x = 'User Type', y = 'Rides (%)', fill = 'Ride Type') +
+  theme_minimal()
+
+```
+
+##### **Type of bike and usage by different time frames**
+
+While there is not a substantial difference in daily bike usage, a
+higher number of bikes are utilized on weekdays compared to weekends.
+Notably, Sunday sees the lowest bike usage. Overall, there is no
+significant fluctuation in the daily usage pattern.
+
+```{r}
+
+grouping_var = 'ride_day'  
+
+rides %>% filter(rideable_type != 'docked_bike') %>%
+  count(rideable_type, get(grouping_var)) %>%
+  group_by(rideable_type) %>%
+  mutate(total_count = sum(n)) %>%
+  ungroup() %>%
+  mutate(pct_type = 100 * n / total_count) %>%
+  ggplot(aes(x = `get(grouping_var)`, y = pct_type, fill = rideable_type)) +
+  #ggplot(aes(x = rideable_type, y = pct_type, fill = `get(grouping_var)`)) +
+  geom_bar(stat = 'identity', position = position_dodge()) +
+  labs(title = 'Proportion of rides by Day of Week', x = 'Day of Week', y = 'Rides (%)', fill = 'Ride Type') +
+  theme_minimal()
+
+```
+
+Bike usage reaches its peak between noon and evening (12 PM to 8 PM),
+comprising almost 40% of overall activity. On the contrary, usage of
+both classic and electric bikes is minimal during the night,
+specifically from midnight (12 AM) to 6 AM, representing less than 5% of
+total.
+
+```{r}
+
+grouping_var = 'ride_ToD'  
+
+rides %>% filter(rideable_type != 'docked_bike') %>%
+  count(rideable_type, get(grouping_var)) %>%
+  group_by(rideable_type) %>%
+  mutate(total_count = sum(n)) %>%
+  ungroup() %>%
+  mutate(pct_type = 100 * n / total_count) %>%
+  ggplot(aes(x = `get(grouping_var)`, y = pct_type, fill = rideable_type)) +
+  #ggplot(aes(x = rideable_type, y = pct_type, fill = `get(grouping_var)`)) +
+  geom_bar(stat = 'identity', position = position_dodge()) +
+  labs(title = 'Proportion of rides by Time of Day', x = 'Time of Day', y = 'Rides (%)', fill = 'Ride Type') +
+  theme_minimal()
+
+```
+
+The usage patterns for both e-bikes and classic bikes are similar. In
+the morning rush hour (7 AM to 8 AM), they account for 10% of daily bike
+usage, while the evening rush hour (5 PM to 6 PM) sees a higher usage,
+contributing to 20% of the day's total. Therefore, these two hours of
+peak rush hour collectively represent 30% of the entire day's bike
+usage.
+
+```{r}
+
+grouping_var = 'ride_peak'  
+
+rides %>% filter(rideable_type != 'docked_bike') %>%
+  count(rideable_type, get(grouping_var)) %>%
+  group_by(rideable_type) %>%
+  mutate(total_count = sum(n)) %>%
+  ungroup() %>%
+  mutate(pct_type = 100 * n / total_count) %>%
+  ggplot(aes(x = `get(grouping_var)`, y = pct_type, fill = rideable_type)) +
+  #ggplot(aes(x = rideable_type, y = pct_type, fill = `get(grouping_var)`)) +
+  geom_bar(stat = 'identity', position = position_dodge()) +
+  labs(title = 'Proportion of rides by Peak-Hour', x = 'Peak Hours', y = 'Rides (%)', fill = 'Ride Type') +
+  theme_minimal()
+
+```
+
+##### **Type of bike and trips**
+
+On average, rides in electric bikes are longer, both in terms of
+distance and duration.
+
+```{r}
+df =
+rides %>% filter(rideable_type != 'docked_bike') %>%
+  group_by(rideable_type) %>%
+  summarize(`Avg Distance (meters)` = round(mean(ride_dist_m, na.rm = TRUE)),
+            `Avg Duration (minutes)` = round(mean(ride_dur_s, na.rm = TRUE) / 60, 1),
+            #`Avg Speed` = round((`Avg Distance (meters)` / 1000) / (`Avg Duration (minutes)` / 60), 3)
+            )
+DT::datatable(df, rownames = FALSE)
+```
+
+The density graph depicting the distribution of ride distances (capped
+at 5000 meters) for various bike types offers a clear perspective on the
+average journey lengths associated with each type of bike. It's
+noticeable that e-bikes typically have slightly longer riding distances
+compared to classic bikes, with the most common distance being around
+1000 meters. Moreover, the majority of rides, regardless of bike type,
+do not exceed 2 kilometers. About 6% of rides start and end in the same
+station, meaning the calculated distance is zero, which explains a
+somewhat elevated density in 0. It's important to know that these rides
+are made exclusively with regular bikes.
+
+```{r}
+hist_var = 'ride_dist_m'
+
+rides %>% filter(rideable_type != 'docked_bike') %>%
+  replace_na(list(hist_var = 0)) %>%
+  ggplot(aes(x = get(hist_var), fill = rideable_type)) +
+  geom_density(alpha = 0.3) +
+  scale_x_continuous(limits = c(0, 5000)) +  # This is what I changed manually
+  labs(title = 'Ride Distance Distribution for Ride Types', x = 'Ride Distance (meters)', y = 'density', fill = 'Ride Type') + 
+  theme_minimal()
+  
+```
+
+The density graph shows that e-bikes are typically ridden at faster
+speeds than classic bikes. Most e-bike riders travel at speeds ranging
+from 8 to 15 km/h, while the speed of classic bike riders mostly falls
+between 5 to 12 km/h. It is also observed that very few bikes, whether
+electric or classic, surpass the speed of 20 km/h.
+
+```{r}
+hist_var = 'ride_speed_kmh'
+
+rides %>% filter(rideable_type != 'docked_bike') %>%
+  replace_na(list(hist_var = 0)) %>%
+  ggplot(aes(x = get(hist_var), fill = rideable_type)) +
+  geom_density(alpha = 0.3) +
+  scale_x_continuous(limits = c(0, 30)) +  # This is what I changed manually
+  labs(title = 'Ride Speed Distribution for Ride Types', x = 'Ride Speed (km/h)', y = 'density', fill = 'Ride Type') + 
+  theme_minimal()
+```
+
+#### **Recommendations based on dynamic application**
+
+Based on our investigation results regarding the varying patterns of
+e-bike and classic bike usage from different perspectives, we can
+formulate recommendations for Citi Bike on optimizing the distribution
+of these bike types.
+
+***Tab 1: Routes***
+
+Within the first tab of our dynamic application, named 'Routes,' we have
+delineated the most popular routes taken by Citi Bike rides in Jersey
+City on different weekdays, visually represented on a map. Users have
+the option to select the number of most popular routes using a slider
+and can choose the respective weekdays from the left side. The resulting
+paths displayed on the map identifies high-demand stations. By analyzing
+routes with high user traffic, Citi Bike could pinpoint stations along
+these routes that consistently experience increased demand for bikes.
+This approach provides our clients with insights into stations where
+they should allocate a higher number of bikes along these popular routes
+during different weekdays, considering their popularity. This strategic
+allocation aims to reduce instances of bike shortages and increase the
+efficiency of bike allocation in Jersey City.
+
+The dynamic application outputs reveal distinct commuting patterns of
+popular ride routes across various weekdays. From Monday to Thursday,
+the most frequented route starts at Marin Light Rail and ends at Grove
+St PATH, situated in the lower east part of Jersey City, with the
+highest ride count recorded on Tuesday at 558 rides from Jul 2023 to Oct
+2023. The result suggests a commuter-heavy route, likely utilized for
+work commutes. Conversely, from Friday to Sunday, the most popular route
+commences at Hoboken Terminal - Hudson St & Hudson Pl and ends at
+Hoboken Ave at Monmouth St, located in the upper east part of Jersey
+City, indicating potential leisure or weekend specific travels. The peak
+usage is observed on Saturday, reaching 379 rides from Jul 2023 to Oct
+2023.
+
+The disparity between the routes during weekdays and weekends implies a
+shift in rider behavior, with weekdays possibly focused on work commutes
+and weekends geared towards leisurely activities or different
+destinations. For routes starting from transportation hubs during
+weekdays (Marin Light Rail, Grove St PATH), it indicate commuter-heavy
+areas, while routes starting from different locations during
+weekends(Hoboken Terminal) suggest travel to recreational destinations.
+
+|                                                                                                                                                                                                   |                                                                                                                                                                                                   |
+|------------------------------------|------------------------------------|
+| ![](https://lh7-us.googleusercontent.com/4VmyOPD2uZZnm2LZbDBykNoyQQJueObqOFJElOp-9W_sCulpeR9KbVQj5AimaQM-526hfjrxsVq3JL5YG2cFOoNOqT9TXMj4jnXSKlzuqPH50kNMeKkdc5zXESjkKqQ9uxyAMTGoUQ09iEVNjmKQqY0) | ![](https://lh7-us.googleusercontent.com/uaKSimiqGfgqUU71BWdqNYU6Zoj9hgXbpZy-D0wBrJrIUEHXSkLlWc_yktsVV6CdWGuI7K9_lnLG1pI24igVWBnLBSpObyaxwKpioKQBwKdp_NUv_vGioI85-6yyU1PlIZUVlS6Uh9Ycp5Q7ArGJ-HE) |
+| Most Frequented Route (Weekdays)                                                                                                                                                                  | Most Frequented Route (Weekend)                                                                                                                                                                   |
+
+Based on the specific usage patterns observed, we recommend Citi Bike
+strategically allocate additional bikes during peak times along
+commuter-heavy routes, notably from Marin Light Rail to Grove St PATH on
+weekdays, ensuring ample supply, particularly on Tuesdays. Considering
+the relatively short route distance, Citi Bike could consider allocating
+more classic bikes at these stations. For weekends, focusing on
+increased bike availability around Hoboken Terminal would accommodate
+riders exploring recreational areas. Given the longer route distance,
+Citi Bike could consider allocating more e-bikes at stations along this
+route. Moreover, implementing targeted promotions in these areas to
+enhance social awareness, along with enhancing bike infrastructure along
+these popular paths, would significantly enhance user experiences.
+
+***Tab 2: Stations***
+
+In the second tab of our dynamic application named 'Stations,' a
+graphical representation showcases the locations of all stations in
+Jersey City. This tab shows the number of bikes entering and exiting
+each station daily, the net change per day, and cumulatively tracks bike
+movements over the selected time period. You choose to view ebike or
+classic bike on any given date. This tab provides a visualization of the
+exact locations of stations on a map, enabling our client, Citi Bike, to
+monitor the daily traffic at each station.
+
+![](https://lh7-us.googleusercontent.com/wnRD0W7NPA_SNXuFnudyouaFaC9yuOX8BL8pV9ZbTVTfWY-4xH8RTyWObgDtvPgcpzvqgIg69S8fUtsdrgGx8W0urdRkRb5iPfeE8v1vXOLg0wDiPCy1lWgnpOTcRP-m6gIpQq5U8iijsZEADkZAEBY){width="172"}
+
+Notably, the net change of a bike station is calculated using four
+metrics, which involve subtracting the number of bikes that leave a
+station (bike out) from the number that arrive (bike in). A negative net
+change indicates a shortage of bikes at that station, while a positive
+number suggests a surplus. 
+
+Most stations typically experience single-digit bike inflow and outflow,
+but stations near PATH hubs like Hoboken and Grove Street often see
+two-digit figures in bike traffic. These areas are evidently busier than
+others, indicating a higher demand for bike services. Notably, the
+Hoboken station is the busiest, primarily due to its role as a major
+PATH station for New Jersey residents commuting to New York. In the
+vicinity of Hoboken, there are four closely situated bike stations.
+Despite their proximity - just a block apart - some stations experience
+significantly different rates of bike inflow and outflow.
+
+Considering the information provided, we recommend that Citi Bike
+utilize this tab to gain a clearer understanding of bike usage patterns.
+This insight will assist in optimizing the distribution of bikes
+throughout Jersey City, with a particular focus on stations experiencing
+higher levels of bike inflow and outflow.
+
+***Tab 3: E-bikes / Classic bikes***
+
+In the third tab of the dynamic application, named 'E-bikes / Classic
+bikes,' we illustrate the change in the number of bikes leaving the
+station on selected weekdays. Users can select bike types and weekdays
+on the upper left side, followed by choosing specific station markers
+displayed on the map. The resulting outcome is presented as a plotted
+graph, displaying the average numbers of bikes leaving the station
+during different hours of the day.
+
+Our visualization of the average number of e-bikes leaving the station
+offers insights into peak hours of bike usage, aiding in strategic
+resource allocation. Simultaneously, identifying stations experiencing
+higher bike outflow during specific hours provides opportunities to
+increase bike stock and promote the usage of e-bikes at those stations
+to avoid shortages and raise customer awareness.
+
+The graph below illustrates the average number of e-bikes departing from
+the Marin Light Rail station, previously identified as the most
+frequented starting point on workdays, particularly on Tuesdays. It
+reveals peak hours for e-bike outflow at this station around 8 am and 6
+pm, aligning with rider behavior analyzed in the 'Routes' section. The
+highest outflow, approximately 8 bikes, occurs at 8 am, followed by a
+significant drop to an outflow of 2.5 bikes around 9 am, suggesting a
+potential shortage in e-bikes post-peak commuting hours.
+
+![](https://lh7-us.googleusercontent.com/M-5HBOyO1XNvPfLAtax4YyaeUf_-ydknwqo0RlGrkIkuZWm0E-XBJO0qhmRn5Lvr_p6VreHBTDW9hwLOM9DdhfMnUXYUCPla4_z6CNaQ-1dLP9NeQnTf3nYnToXef6aGxCqU3yfmWdFm6tUOUWUW460){width="435"}\
+\
+Based on these findings, we recommend that Citi Bike increase e-bike
+inventory at popular stations during peak commuting hours (8 am and 6
+pm) on workdays to meet heightened demand and prevent shortages
+afterward. Leveraging the functionality in the third tab enables Citi
+Bike to identify hotspot stations. Considering this, Citi Bike could
+contemplate expanding or upgrading these stations to ensure sufficient
+e-bike availability, battery charging facilities, and parking spaces
+during peak hours. Additionally, conducting rider awareness programs at
+these hotspots to educate riders about e-bike availability and their
+advantages would further enhance user experiences.
+
+***Tab 4: Grouping Variables***
+
+In our 'Grouping Variables' tab, the count of e-bike and classic bike
+rides is depicted in the resulting plot. Users can select the grouping
+variables from the options provided on the upper left side. The ride
+counts can be grouped by a single date, a single month, every weekday,
+or every weekend. The count of classic bikes is represented by the red
+line, while the count of e-bikes is indicated by the blue line. 
+
+![](images/Sin%20título.jpg)
+
+This tab provides Citi Bike with essential insights into rider behavior
+and usage patterns across different time measures. Through the
+visualization, Citi Bike gains a comprehensive understanding of daily,
+monthly, and weekly trends, which is essential for resource optimization
+by identifying usage patterns.
+
+***Tab 5: Density Plot***
+
+Our latest density tab offers three variable selections, allowing our
+customers to visualize the density plot of riding duration in seconds,
+riding distance in meters, and riding speed in km/h. In this
+representation, classic bikes are depicted in red, while e-bikes are
+shown in blue.
+
+![](images/Sin%20título-1.jpg)
+
+As observed in our dynamic application, e-bikes tend to exhibit higher
+speeds and cover longer distances and durations. This tab provides a
+visual representation for users to compare how customers ride these two
+different types of bikes in the city.
+
+## Quick-start guide
+
+This section aims to ensure reproducible generation of results.
+
+**Data Sources**
+
+The trip data utilized for this project was from October 2021 to October
+2023 and was retrieved from the following website:
+<https://s3.amazonaws.com/tripdata/index.html>
+
+The files corresponding to Jersey City data follow this name pattern:
+JC\_*YYYYMM*\_citibike_tripdata.csv.zip After downloading the files,
+they must be extracted from the zip format.
+
+**Folder Structure**
+
+For the dynamic application to run seamlessly, data files and scripts
+must be organized in the following folder structure:
+
+-   Scripts
+    -   Dynamic Reporting Engine - Final.Rmd
+    -   Install_Libraries.R
+    -   electric_vs_classic.rds
+    -   shiny_preprocessed_rides.rds
+    -   station_lat_lng.rds
+    -   stations_tab.rds
+-   Data
+    -   JC\_*YYYYMM*\_citibike_tripdata.csv
+    -   **JC_202207_citibike.tripdata.csv** has a typo from the website.
+        After downloading one must manually replace *citbike* for
+        *citibike*.
+
+**Data Processing**
+
+To ensure the dynamic application is user-friendly and requires minimum
+technical requirements, the data processing is encapsulated within the
+same script. Because of this, **the dynamic application may take a few
+seconds to run**, depending on the computer.
+
+**Install Requirements**
+
+First time users may need to download software prior to running the
+dynamic application.
+
+1.  Install R and RStudio: Latest versions of both can be installed from
+    this link: <https://posit.co/download/rstudio-desktop/>. This guide
+    <https://rstudio-education.github.io/hopr/starting.html> provides
+    more detailed instructions.
+2.  Install required packages: After downloading R and RStudio, open the
+    latter and run the script `Install_Libraries.R` provided along the
+    deliverables.
